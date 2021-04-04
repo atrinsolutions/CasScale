@@ -19,17 +19,59 @@ namespace CasScale
     public class CasClass
     {
         private byte[] ReciveBuffer = new byte[1024];
-        private byte[] SendPlu = new byte[1024];
-
-        public Product[] Products { get; set; }
-        private Product PluInfo { get; set; }
-        public bool IsDataReady { get; set; }
-        public Product ReturnPlu(string server, int port,int plu_no)
+        private Product[] Plus;
+        public byte[] RequestPluInfo = new byte[]
         {
-            IsDataReady = false;
+            0x52,0x30,0x32,0x46,0x30,0x31,0x30,0x30,0x30,0x30,0x30,0x31,0x2c,0x30,0x30,0x0a,
+        };
 
-            return PluInfo;
+        public Product ReadPlu(string server, int port, int plu_no)
+        {
+
+
+            return Plus[0];
         }
+        public Product[] ReadAllPlus(string server, int port)
+        {
+            string Tempstring;
+            int PackCounter;
+            bool IsReadAll = true;
+
+            for (PackCounter = 1; IsReadAll == true; PackCounter++)
+            {
+                try
+                {
+                    TcpClient client = new TcpClient(server, port);
+                    if (client == null)
+                    {
+                        _logger.LogInformation("Client is null !!!");
+                    }
+                    else
+                    {
+                        NetworkStream stream = client.GetStream();
+                        Tempstring = PackCounter.ToString("X6");
+                        ASCIIEncoding.ASCII.GetBytes(Tempstring, 0, 6, RequestPluInfo, 6);
+                        stream.Write(RequestPluInfo, 0, RequestPluInfo.Length);
+                        String responseData = String.Empty;
+                        Int32 bytes = stream.Read(ReciveBuffer, 0, ReciveBuffer.Length);
+
+                        stream.Close();
+                        client.Close();
+                    }
+                }
+                catch (ArgumentNullException e)
+                {
+                    _logger.LogInformation(
+                        "ArgumentNullException !!! {0}", e);
+                }
+                catch (SocketException e)
+                {
+                    _logger.LogInformation(
+                        "SocketException !!! {0}", e);
+                }
+            }
+        }
+
         private int ConvertEncoding1252ToDecimal(string EncodeData)
         {
             byte[] EncodeArray = Encoding.GetEncoding(1252).GetBytes(EncodeData);
