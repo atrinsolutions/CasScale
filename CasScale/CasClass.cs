@@ -1,41 +1,134 @@
-﻿//using System;
-//using System.Collections.Generic;
-//using System.Linq;
-//using System.Text;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Net;
 using System.Net.Sockets;
-using System.Reflection;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
-
-namespace CasScale
+namespace TestCassDll
 {
     public class CasClass
     {
-        private byte[] ReciveBuffer = new byte[1024];
-        private Product[] Plus { get; }
-        public byte[] RequestPluInfo = new byte[]
+        private byte[] Buffer = new byte[1024];
+
+        public List<Product> AllPlu { get { return Plus; } set { } }
+        private List<Product> Plus = new List<Product>();
+        private int ProcessStatus;
+
+        Product PluInfo;
+        public Product PluData { get { return PluInfo; } set { } }
+        public CasClass()
+        {
+            PluInfo = new Product();
+            ProcessStatus = 0;
+        }
+
+        private byte[] RequestPluInfo = new byte[]
         {
             0x52,0x30,0x32,0x46,0x30,0x31,0x30,0x30,0x30,0x30,0x30,0x31,0x2c,0x30,0x30,0x0a,
         };
 
-        public Product ReadPlu(string server, int port, int plu_no)
+        public int ReadPlu(string server, int port, int Plu_No)
         {
-            return Plus[0];
+            return ReadAllPlus(server, port, true, Plu_No);
         }
-        public int ReadAllPlus(string server, int port)
+
+        public string MakeStr1252(int Number)
+        {
+            byte[] intBytes = BitConverter.GetBytes(Number);
+            return Encoding.GetEncoding(1256).GetString(intBytes, 0, intBytes.Length);
+        }
+        public string MakeStr1252(short Number)
+        {
+            byte[] intBytes = BitConverter.GetBytes(Number);
+            return Encoding.GetEncoding(1256).GetString(intBytes, 0, intBytes.Length);
+        }
+        public string MakeStr1252(byte Number)
+        {
+            byte[] intBytes = new byte[1];
+            intBytes[0] = Number;
+            return Encoding.GetEncoding(1256).GetString(intBytes, 0, intBytes.Length);
+        }
+
+
+        public int WritePlu(string server, int port)
+        {
+            string PackData = "W02A";
+            try
+            {
+                TcpClient client = new TcpClient(server, port);
+                if (client == null)
+                    return -1; // client is null !!!
+                else
+                {
+                    NetworkStream stream = client.GetStream();
+
+                    PackData += PluData.PLU_No.ToString("X5");
+                    PackData += ",";
+                    PackData += PluData.DepartmentNo.ToString("X2");
+                    PackData += "L";
+                    PackData += PluData.PackLenght.ToString("X4");
+                    PackData += ":";
+                    PackData = PackData + "F=01.57,2:" + MakeStr1252((short)PluData.DepartmentNo);
+                    PackData = PackData + "F=02.4C,4:" + MakeStr1252(PluData.PLU_No);
+                    PackData = PackData + "F=04.4D,1:" + MakeStr1252((byte)PluData.PLU_Type);
+                    PackData = PackData + "F=05.42,1:" + MakeStr1252((byte)PluData.Unit_Weight);
+                    PackData = PackData + "F=06.4C,4:" + MakeStr1252(PluData.Unit_Price);
+                    PackData = PackData + "F=08.42,1:" + MakeStr1252((byte)PluData.TaxCode);
+                    PackData = PackData + "F=09.57,2:" + MakeStr1252((short)PluData.Group_No);
+                    PackData = PackData + "F=0B.4C,4:" + MakeStr1252(Int32.Parse(PluData.Itemcode));
+                    PackData = PackData + "F=0C.42,1:" + MakeStr1252((byte)PluData.Tare_No);
+                    PackData = PackData + "F=0D.4C,4:" + MakeStr1252(PluData.TareValue);
+                    PackData = PackData + "F=50.57,2:" + MakeStr1252((short)PluData.Label_No);
+                    PackData = PackData + "F=51.57,2:" + MakeStr1252((short)PluData.Ax_Label_No);
+                    PackData = PackData + "F=55.57,2:" + MakeStr1252((short)PluData.Barcode_No);
+                    PackData = PackData + "F=56.57,2:" + MakeStr1252((short)PluData.Barcode2_No);
+                    PackData = PackData + "F=5A.42,1:" + MakeStr1252((byte)PluData.SaleMessage_No);
+                    PackData = PackData + "F=5B.42,4:" + MakeStr1252(PluData.Special_Price);
+                    PackData = PackData + "F=0A.53," + PluData.Name1.Length.ToString("X1") + ":" + PluData.Name1;
+                    byte[] EncodeArray = Encoding.GetEncoding(1256).GetBytes(PackData);
+                    PluData.PackLenght = EncodeArray.Length - 18;
+                    Array.Resize(ref EncodeArray, EncodeArray.Length + 1);
+                    byte Chcksum = EncodeArray[18];
+                    for (int Counter = 19; Counter < EncodeArray.Length; Counter++)
+                        Chcksum ^= EncodeArray[Counter];
+
+                    EncodeArray[EncodeArray.Length - 1] = Chcksum;
+
+                    PluData.PackLenght = EncodeArray.Length - 19;
+
+                    string LenghtStr = PluData.PackLenght.ToString("X4");
+
+                    ASCIIEncoding.ASCII.GetBytes(LenghtStr, 0, 4, EncodeArray, 13);
+
+                    stream.Write(EncodeArray, 0, EncodeArray.Length);
+                    stream.Close();
+                    client.Close();
+                }
+            }
+            catch (ArgumentNullException e)
+            {
+                return -2; // ArgumentNullException !!!
+            }
+            catch (SocketException e)
+            {
+                return -3; // SocketException !!!
+            }
+            return 1;
+        }
+        public int ReadAll(string server, int port)
+        {
+            return ReadAllPlus(server, port, false, 0);
+        }
+
+        private int ReadAllPlus(string server, int port, bool breakOnSpecialPlu, int Plu_No)
         {
             string Tempstring;
             int PluCounter;
             bool DataAvailabel = true;
 
-            for (PluCounter = 0; DataAvailabel == true; PluCounter++)
+
+            for (PluCounter = 1; DataAvailabel == true; PluCounter++)
             {
                 try
                 {
@@ -49,9 +142,21 @@ namespace CasScale
                         ASCIIEncoding.ASCII.GetBytes(Tempstring, 0, 6, RequestPluInfo, 6);
                         stream.Write(RequestPluInfo, 0, RequestPluInfo.Length);
                         String responseData = String.Empty;
-                        stream.Read(ReciveBuffer, 0, ReciveBuffer.Length);
-                        if (ProcessRecivedPluData(Plus[PluCounter], ReciveBuffer) == -1)
+                        stream.Read(Buffer, 0, Buffer.Length);
+                        ProcessStatus = ProcessRecivedPluData(Buffer);
+                        if (ProcessStatus == 1)
+                        {
+                            if (breakOnSpecialPlu == true)
+                            {
+                                if (PluInfo.PLU_No == Plu_No)
+                                    DataAvailabel = false;
+                            }
+                            else
+                                Plus.Add(PluInfo);
+                        }
+                        else
                             DataAvailabel = false;
+
                         stream.Close();
                         client.Close();
                     }
@@ -65,13 +170,14 @@ namespace CasScale
                     return -3; // SocketException !!!
                 }
             }
-            if (DataAvailabel == false)
+            if (DataAvailabel == false || ProcessStatus == -1)
             {
-                if (PluCounter == 0)
+                if (Plus.Count() == 0)
                     return 2; // succeed : scale has no data
             }
             return 1; // succeed : scale has data 
         }
+
 
         private int ConvertEncoding1252ToDecimal(string EncodeData)
         {
@@ -80,18 +186,19 @@ namespace CasScale
             string HexStr = BitConverter.ToString(EncodeArray).Replace("-", "");
             return Int32.Parse(HexStr, System.Globalization.NumberStyles.HexNumber);
         }
-        public short ProcessRecivedPluData(Product _productInfo, byte[] data)
+        private short ProcessRecivedPluData(byte[] data)
         {
+
             int ChecksumIndex = 18;
             byte CalculatedChecksum = 0;
-            if (Encoding.GetEncoding(1252).GetString(data, 0, 13) != "W02AF4240,00L")
+            if (Encoding.GetEncoding(1252).GetString(data, 0, 13) == "W02AF4240,00L")
                 return -1;
             if (Encoding.GetEncoding(1252).GetString(data, 0, 4) != "W02A")
                 return -2;
             if (data.Length < ChecksumIndex)
                 return -3;
             CalculatedChecksum = data[18];
-            for (int PackCounter = ChecksumIndex+1; PackCounter < data.Length - 1; PackCounter++)
+            for (int PackCounter = ChecksumIndex + 1; PackCounter < data.Length - 1; PackCounter++)
                 CalculatedChecksum ^= data[PackCounter];
             if (CalculatedChecksum != data[data.Length - 1])
                 return -4;
@@ -116,18 +223,18 @@ namespace CasScale
                 var SplitedConfigs = BasePack.Split(ConfigDelimiters, StringSplitOptions.RemoveEmptyEntries);
                 var SplitedData = BasePack.Split(DataDelimiters, StringSplitOptions.RemoveEmptyEntries);
 
-                _productInfo.PLU_No = Int32.Parse(SplitedConfigs[0], System.Globalization.NumberStyles.HexNumber);
-                _productInfo.DepartmentNo = Int32.Parse(SplitedConfigs[1], System.Globalization.NumberStyles.HexNumber);
-                _productInfo.ScaleID = Int32.Parse(SplitedConfigs[3], System.Globalization.NumberStyles.HexNumber);
-                _productInfo.LockInfo = (Int32.Parse(SplitedConfigs[7], System.Globalization.NumberStyles.HexNumber)) > 0 ? true : false;
-                _productInfo.PackIP = String.Format("{0}.{1}.{2}.{3}",
+                PluInfo.PLU_No = Int32.Parse(SplitedConfigs[0], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.DepartmentNo = Int32.Parse(SplitedConfigs[1], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.ScaleID = Int32.Parse(SplitedConfigs[3], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.LockInfo = (Int32.Parse(SplitedConfigs[7], System.Globalization.NumberStyles.HexNumber)) > 0 ? true : false;
+                PluInfo.PackIP = String.Format("{0}.{1}.{2}.{3}",
                     int.Parse(SplitedConfigs[9].Substring(0, 2), System.Globalization.NumberStyles.HexNumber),
                     int.Parse(SplitedConfigs[9].Substring(2, 2), System.Globalization.NumberStyles.HexNumber),
                     int.Parse(SplitedConfigs[9].Substring(4, 2), System.Globalization.NumberStyles.HexNumber),
                     int.Parse(SplitedConfigs[9].Substring(6, 2), System.Globalization.NumberStyles.HexNumber));
-                _productInfo.PackPort = Int32.Parse(SplitedConfigs[11], System.Globalization.NumberStyles.HexNumber);
-                _productInfo.ScaleServiceType = (byte)Int32.Parse(SplitedConfigs[13], System.Globalization.NumberStyles.HexNumber);
-                _productInfo.TableRow = Int32.Parse(SplitedConfigs[15], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.PackPort = Int32.Parse(SplitedConfigs[11], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.ScaleServiceType = (byte)Int32.Parse(SplitedConfigs[13], System.Globalization.NumberStyles.HexNumber);
+                PluInfo.TableRow = Int32.Parse(SplitedConfigs[15], System.Globalization.NumberStyles.HexNumber);
                 string SpFunc;
                 string[] SplitedFunc;
                 for (int LoopCnt = 0, DataCounter = 3; LoopCnt < DataCount; LoopCnt++, DataCounter += 2)
@@ -137,55 +244,55 @@ namespace CasScale
                     switch (SplitedFunc[0].ToUpper())
                     {
                         case "01.57":
-                            _productInfo.DepartmentNo = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.DepartmentNo = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "0A.53":
-                            _productInfo.Name1 = SplitedData[DataCounter];
+                            PluInfo.Name1 = SplitedData[DataCounter];
                             break;
                         case "0B.4C":
-                            _productInfo.Itemcode = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]).ToString();
+                            PluInfo.Itemcode = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]).ToString();
                             break;
                         case "06.4C":
-                            _productInfo.Unit_Price = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Unit_Price = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "04.4D":
-                            _productInfo.PLU_Type = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.PLU_Type = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "02.4C":
-                            _productInfo.PLU_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.PLU_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "05.42":
-                            _productInfo.Unit_Weight = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Unit_Weight = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "09.57":
-                            _productInfo.Group_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Group_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "0D.4C":
-                            _productInfo.TareValue = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.TareValue = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "0C.42":
-                            _productInfo.Tare_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Tare_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "08.42":
-                            _productInfo.TaxCode = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.TaxCode = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "51.57":
-                            _productInfo.Ax_Label_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Ax_Label_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "56.57":
-                            _productInfo.Barcode2_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Barcode2_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "5A.42":
-                            _productInfo.SaleMessage_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.SaleMessage_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "5B.42":
-                            _productInfo.Special_Price = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Special_Price = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "55.57":
-                            _productInfo.Barcode_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Barcode_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                         case "50.57":
-                            _productInfo.Label_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
+                            PluInfo.Label_No = ConvertEncoding1252ToDecimal(SplitedData[DataCounter]);
                             break;
                     }
                 }
