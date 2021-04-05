@@ -19,7 +19,7 @@ namespace CasScale
     public class CasClass
     {
         private byte[] ReciveBuffer = new byte[1024];
-        private Product[] Plus;
+        private Product[] Plus { get; }
         public byte[] RequestPluInfo = new byte[]
         {
             0x52,0x30,0x32,0x46,0x30,0x31,0x30,0x30,0x30,0x30,0x30,0x31,0x2c,0x30,0x30,0x0a,
@@ -27,49 +27,50 @@ namespace CasScale
 
         public Product ReadPlu(string server, int port, int plu_no)
         {
-
-
             return Plus[0];
         }
-        public Product[] ReadAllPlus(string server, int port)
+        public int ReadAllPlus(string server, int port)
         {
             string Tempstring;
-            int PackCounter;
-            bool IsReadAll = true;
+            int PluCounter;
+            bool DataAvailabel = true;
 
-            for (PackCounter = 1; IsReadAll == true; PackCounter++)
+            for (PluCounter = 0; DataAvailabel == true; PluCounter++)
             {
                 try
                 {
                     TcpClient client = new TcpClient(server, port);
                     if (client == null)
-                    {
-                        _logger.LogInformation("Client is null !!!");
-                    }
+                        return -1; // client is null !!!
                     else
                     {
                         NetworkStream stream = client.GetStream();
-                        Tempstring = PackCounter.ToString("X6");
+                        Tempstring = PluCounter.ToString("X6");
                         ASCIIEncoding.ASCII.GetBytes(Tempstring, 0, 6, RequestPluInfo, 6);
                         stream.Write(RequestPluInfo, 0, RequestPluInfo.Length);
                         String responseData = String.Empty;
-                        Int32 bytes = stream.Read(ReciveBuffer, 0, ReciveBuffer.Length);
-
+                        stream.Read(ReciveBuffer, 0, ReciveBuffer.Length);
+                        if (ProcessRecivedPluData(Plus[PluCounter], ReciveBuffer) == -1)
+                            DataAvailabel = false;
                         stream.Close();
                         client.Close();
                     }
                 }
                 catch (ArgumentNullException e)
                 {
-                    _logger.LogInformation(
-                        "ArgumentNullException !!! {0}", e);
+                    return -2; // ArgumentNullException !!!
                 }
                 catch (SocketException e)
                 {
-                    _logger.LogInformation(
-                        "SocketException !!! {0}", e);
+                    return -3; // SocketException !!!
                 }
             }
+            if (DataAvailabel == false)
+            {
+                if (PluCounter == 0)
+                    return 2; // succeed : scale has no data
+            }
+            return 1; // succeed : scale has data 
         }
 
         private int ConvertEncoding1252ToDecimal(string EncodeData)
@@ -79,26 +80,26 @@ namespace CasScale
             string HexStr = BitConverter.ToString(EncodeArray).Replace("-", "");
             return Int32.Parse(HexStr, System.Globalization.NumberStyles.HexNumber);
         }
-        public short ReadPlu(Product _productInfo, short ChecksumIndex, byte[] data)
+        public short ProcessRecivedPluData(Product _productInfo, byte[] data)
         {
-
+            int ChecksumIndex = 18;
             byte CalculatedChecksum = 0;
+            if (Encoding.GetEncoding(1252).GetString(data, 0, 13) != "W02AF4240,00L")
+                return -1;
             if (Encoding.GetEncoding(1252).GetString(data, 0, 4) != "W02A")
-                return 1;
+                return -2;
             if (data.Length < ChecksumIndex)
-                return 2;
-            CalculatedChecksum = data[ChecksumIndex];
-            for (int PackCounter = ChecksumIndex + 1; PackCounter < data.Length - 1; PackCounter++)
+                return -3;
+            CalculatedChecksum = data[18];
+            for (int PackCounter = ChecksumIndex+1; PackCounter < data.Length - 1; PackCounter++)
                 CalculatedChecksum ^= data[PackCounter];
             if (CalculatedChecksum != data[data.Length - 1])
-                return 3;
+                return -4;
             else
             {
                 string[] CountDelimiter = {
                             "F=",
                           };
-                string BasePack = Encoding.GetEncoding(1252).GetString(data, 0, data.Length - 1);
-                var DataCount = BasePack.Split(CountDelimiter, StringSplitOptions.RemoveEmptyEntries).Count() - 1;
                 string[] ConfigDelimiters = {
                             "W02A",
                             "L",
@@ -106,11 +107,13 @@ namespace CasScale
                             ".",
                             "=",
                           };
-                var SplitedConfigs = BasePack.Split(ConfigDelimiters, StringSplitOptions.RemoveEmptyEntries);
                 string[] DataDelimiters = {
                             "F=",
                             ":",
                           };
+                string BasePack = Encoding.GetEncoding(1252).GetString(data, 0, data.Length - 1);
+                var DataCount = BasePack.Split(CountDelimiter, StringSplitOptions.RemoveEmptyEntries).Count() - 1;
+                var SplitedConfigs = BasePack.Split(ConfigDelimiters, StringSplitOptions.RemoveEmptyEntries);
                 var SplitedData = BasePack.Split(DataDelimiters, StringSplitOptions.RemoveEmptyEntries);
 
                 _productInfo.PLU_No = Int32.Parse(SplitedConfigs[0], System.Globalization.NumberStyles.HexNumber);
@@ -188,7 +191,7 @@ namespace CasScale
                 }
 
             }
-            return 4;
+            return 1;
         }
     }
 }
