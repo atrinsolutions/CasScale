@@ -39,7 +39,6 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="CasClass.cs" />
     <Compile Include="Models\Barcode.cs" />
     <Compile Include="Models\CasScalePackInfo.cs" />
     <Compile Include="Models\Country.cs" />
@@ -50,7 +49,6 @@
     <Compile Include="Models\Ingradiant.cs" />
     <Compile Include="Models\Origin.cs" />
     <Compile Include="Models\PCS_Unit.cs" />
-    <Compile Include="Models\Product.cs" />
     <Compile Include="Models\Sale_Message.cs" />
     <Compile Include="Models\Slaughter_House.cs" />
     <Compile Include="Models\Tare.cs" />
